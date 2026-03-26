@@ -289,37 +289,68 @@
         const TILE_SIZE = (minDimension * 0.85) / BOARD_SIZE;
         const CONTENT_SIZE = TILE_SIZE * 0.8;
 
-        // 이모지 또는 멤버 이름 (원하시는 것으로 유지하세요)
-        const TYPES = ["🐨", "🐹", "🐱", "🐿️", "🐥", "🐻", "🐰"];
+        // ★ 확률 최적화: 5x5 보드에서는 5종류가 황금 비율입니다! (2개 제외)
+        const TYPES = ["🐨", "🐹", "🐱", "🐥", "🐰"];
 
         let board = [];
         let isLocked = false;
         let swipeStartPos = null;
         let swipingTile = null;
+        let score = 0;
+
+        let timeLeft = 60;
+        let gameEnded = false;
 
         const offsetX =
           k.center().x - (BOARD_SIZE * TILE_SIZE) / 2 + TILE_SIZE / 2;
         const offsetY =
-          k.center().y - (BOARD_SIZE * TILE_SIZE) / 2 + TILE_SIZE / 2;
+          k.center().y - (BOARD_SIZE * TILE_SIZE) / 2 + TILE_SIZE / 2 + 20;
 
         // --- 1. 초기 생성 ---
         for (let x = 0; x < BOARD_SIZE; x++) {
           board[x] = [];
           for (let y = 0; y < BOARD_SIZE; y++) {
-            board[x][y] = null; // 초기화만 해두고 셔플 로직을 활용해 채웁니다.
+            board[x][y] = null;
           }
         }
 
+        // --- 2. 상단 UI ---
         k.add([
-          k.text("Puzzle", { size: Math.max(24, TILE_SIZE / 2) }),
-          k.pos(k.center().x, 60),
-          k.anchor("center"),
+          k.text("Puzzle", { size: 24 }),
+          k.pos(20, 30),
+          k.anchor("left"),
           k.color(100, 50, 0),
         ]);
+        const scoreLabel = k.add([
+          k.text("Score: 0", { size: 30 }),
+          k.pos(20, 70),
+          k.anchor("left"),
+          k.color(255, 100, 0),
+        ]);
+        const timerLabel = k.add([
+          k.text(`Time: 60s`, { size: 30 }),
+          k.pos(k.width() - 20, 70),
+          k.anchor("right"),
+          k.color(255, 0, 0),
+        ]);
 
-        // --- 2. 스와이프 로직 ---
+        k.onUpdate(() => {
+          if (!gameEnded) {
+            timeLeft -= k.dt();
+            if (timeLeft <= 0) {
+              timeLeft = 0;
+              gameEnded = true;
+              isLocked = true;
+              k.shake(5);
+              k.wait(0.5, () => k.go("lose", score));
+            }
+            timerLabel.text = `Time: ${Math.ceil(timeLeft)}s`;
+          }
+        });
+
+        // --- 3. 스와이프 로직 ---
         k.onMousePress(() => {
-          if (isLocked) return;
+          if (isLocked || gameEnded) return;
           let mPos = k.mousePos();
           for (let t of k.get("tile")) {
             if (
@@ -334,23 +365,21 @@
         });
 
         k.onMouseRelease(() => {
-          if (!swipingTile || !swipeStartPos || isLocked) return;
+          if (!swipingTile || !swipeStartPos || isLocked || gameEnded) return;
           let mPos = k.mousePos();
-          let dx = mPos.x - swipeStartPos.x;
-          let dy = mPos.y - swipeStartPos.y;
+          let dx = mPos.x - swipeStartPos.x,
+            dy = mPos.y - swipeStartPos.y;
 
           const minSwipeDistance = TILE_SIZE / 4;
           if (
             Math.abs(dx) > minSwipeDistance ||
             Math.abs(dy) > minSwipeDistance
           ) {
-            let targetX = swipingTile.gridX;
-            let targetY = swipingTile.gridY;
-            if (Math.abs(dx) > Math.abs(dy)) {
-              targetX += dx > 0 ? 1 : -1;
-            } else {
-              targetY += dy > 0 ? 1 : -1;
-            }
+            let targetX = swipingTile.gridX,
+              targetY = swipingTile.gridY;
+            if (Math.abs(dx) > Math.abs(dy)) targetX += dx > 0 ? 1 : -1;
+            else targetY += dy > 0 ? 1 : -1;
+
             if (
               targetX >= 0 &&
               targetX < BOARD_SIZE &&
@@ -358,9 +387,7 @@
               targetY < BOARD_SIZE
             ) {
               let targetTile = board[targetX][targetY];
-              if (targetTile) {
-                swapTiles(swipingTile, targetTile);
-              }
+              if (targetTile) swapTiles(swipingTile, targetTile);
             }
           }
           swipingTile = null;
@@ -369,9 +396,8 @@
 
         function swapTiles(tileA, tileB) {
           isLocked = true;
-          const posA = k.vec2(tileA.pos.x, tileA.pos.y);
-          const posB = k.vec2(tileB.pos.x, tileB.pos.y);
-
+          const posA = k.vec2(tileA.pos.x, tileA.pos.y),
+            posB = k.vec2(tileB.pos.x, tileB.pos.y);
           k.tween(
             tileA.pos,
             posB,
@@ -387,21 +413,21 @@
             k.easings.easeOutQuad,
           );
 
-          const tempX = tileA.gridX;
-          const tempY = tileA.gridY;
+          const tempX = tileA.gridX,
+            tempY = tileA.gridY;
           tileA.gridX = tileB.gridX;
           tileA.gridY = tileB.gridY;
           tileB.gridX = tempX;
           tileB.gridY = tempY;
-
           board[tileA.gridX][tileA.gridY] = tileA;
           board[tileB.gridX][tileB.gridY] = tileB;
 
           k.wait(0.25, () => checkMatches({ tileA: tileA, tileB: tileB }));
         }
 
-        // --- 3. 매치 검사 ---
+        // --- 4. 매치 검사 ---
         function checkMatches(swappedTiles = null) {
+          if (gameEnded) return;
           let matched = new Set();
 
           for (let y = 0; y < BOARD_SIZE; y++) {
@@ -443,6 +469,29 @@
 
           if (matched.size > 0) {
             k.shake(2);
+            timeLeft = 60; // 60초 리셋
+            timerLabel.color = k.rgb(0, 200, 0);
+            k.wait(0.3, () => {
+              if (timerLabel) timerLabel.color = k.rgb(255, 0, 0);
+            });
+
+            let earnedPoints = matched.size * 10;
+            score += earnedPoints;
+            scoreLabel.text = `Score: ${score}`;
+
+            k.add([
+              k.text("+" + earnedPoints, {
+                size: Math.max(40, k.width() * 0.1),
+              }),
+              k.pos(k.center()),
+              k.anchor("center"),
+              k.color(255, 150, 0),
+              k.opacity(1),
+              k.lifespan(1, { fade: 0.5 }),
+              k.move(k.UP, 150),
+              k.z(50),
+            ]);
+
             matched.forEach((t) => {
               k.destroy(t);
               board[t.gridX][t.gridY] = null;
@@ -450,11 +499,10 @@
             k.wait(0.2, applyGravity);
           } else {
             if (swappedTiles) {
-              // 매칭 실패 시 되돌리기
               let tA = swappedTiles.tileA,
                 tB = swappedTiles.tileB;
-              const posA = k.vec2(tA.pos.x, tA.pos.y);
-              const posB = k.vec2(tB.pos.x, tB.pos.y);
+              const posA = k.vec2(tA.pos.x, tA.pos.y),
+                posB = k.vec2(tB.pos.x, tB.pos.y);
               k.tween(
                 tA.pos,
                 posB,
@@ -481,18 +529,16 @@
 
               k.wait(0.25, () => (isLocked = false));
             } else {
-              // ★ 더 이상 터질 게 없을 때, 데드락(진행 불가)인지 검사합니다!
-              if (!hasAnyMove()) {
-                shuffleBoard(); // 진행 불가면 판 엎기!
-              } else {
-                isLocked = false;
-              }
+              // 더 이상 맞출 게 없어도 셔플 화면을 띄우지 않고, 몰래 해결합니다!
+              if (!hasAnyMove()) forceValidMove();
+              isLocked = false;
             }
           }
         }
 
-        // --- 4. 중력 & 리필 ---
+        // --- 5. 중력 & 리필 ---
         function applyGravity() {
+          if (gameEnded) return;
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = BOARD_SIZE - 1; y >= 0; y--) {
               if (board[x][y] === null) {
@@ -523,89 +569,81 @@
         }
 
         function fillEmptySpaces() {
-          let filled = false;
+          if (gameEnded) return;
+
+          let newTiles = [];
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = 0; y < BOARD_SIZE; y++) {
               if (board[x][y] === null) {
-                filled = true;
                 const itemType = k.choose(TYPES);
                 const newTile = k.add([
                   k.text(itemType, { size: CONTENT_SIZE }),
-                  k.pos(x * TILE_SIZE + offsetX, offsetY - minDimension * 0.3),
+                  k.pos(x * TILE_SIZE + offsetX, offsetY - minDimension * 0.3), // 화면 위 대기
                   k.anchor("center"),
                   k.area(),
                   "tile",
                   { gridX: x, gridY: y, type: itemType },
                 ]);
                 board[x][y] = newTile;
-                const targetPos = k.vec2(
-                  x * TILE_SIZE + offsetX,
-                  y * TILE_SIZE + offsetY,
-                );
-                k.tween(
-                  newTile.pos,
-                  targetPos,
-                  0.2,
-                  (p) => (newTile.pos = p),
-                  k.easings.easeOutQuad,
-                );
+                newTiles.push(newTile);
               }
             }
           }
-          // 채워졌든 안 채워졌든 무조건 checkMatches를 불러서 데드락 검사를 수행하게 합니다.
-          if (filled) {
+
+          // ★ 스마트 드롭: 타일이 내려오기 전에 검사해서 데드락을 원천 차단합니다.
+          if (newTiles.length > 0 && !hasAnyMove()) {
+            forceValidMove();
+          }
+
+          // 이제 안전이 확보된 타일들을 화면 아래로 떨어뜨립니다.
+          newTiles.forEach((t) => {
+            const targetPos = k.vec2(
+              t.gridX * TILE_SIZE + offsetX,
+              t.gridY * TILE_SIZE + offsetY,
+            );
+            k.tween(
+              t.pos,
+              targetPos,
+              0.2,
+              (p) => (t.pos = p),
+              k.easings.easeOutQuad,
+            );
+          });
+
+          if (newTiles.length > 0) {
             k.wait(0.3, () => checkMatches());
           } else {
             checkMatches();
           }
         }
 
-        // --- ★ 5. 경우의 수 예측 및 셔플 알고리즘 ★ ---
-
-        // 현재 보드에 한 번의 스와이프로 매칭될 가능성이 있는지 가상으로 스캔합니다.
+        // --- 6. 경우의 수 예측 & 스마트 드롭 알고리즘 ---
         function hasAnyMove() {
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = 0; y < BOARD_SIZE; y++) {
-              // 오른쪽 타일과 바꿔보기 테스트
-              if (x < BOARD_SIZE - 1) {
-                if (testSwap(x, y, x + 1, y)) return true;
-              }
-              // 아래쪽 타일과 바꿔보기 테스트
-              if (y < BOARD_SIZE - 1) {
-                if (testSwap(x, y, x, y + 1)) return true;
-              }
+              if (x < BOARD_SIZE - 1) if (testSwap(x, y, x + 1, y)) return true;
+              if (y < BOARD_SIZE - 1) if (testSwap(x, y, x, y + 1)) return true;
             }
           }
-          return false; // 모든 경우의 수를 돌렸는데도 true가 안 나오면 진행 불가 상태!
+          return false;
         }
 
-        // 두 타일을 가상으로 바꾼 뒤, 3개가 맞춰지는지 확인하고 다시 원래대로 돌려놓습니다.
         function testSwap(x1, y1, x2, y2) {
           if (!board[x1][y1] || !board[x2][y2]) return false;
-
-          let type1 = board[x1][y1].type;
-          let type2 = board[x2][y2].type;
-
-          // 가상 교환
+          let type1 = board[x1][y1].type,
+            type2 = board[x2][y2].type;
           board[x1][y1].type = type2;
           board[x2][y2].type = type1;
-
-          // 매칭 여부 확인
           let isMatch = checkSingleMatch(x1, y1) || checkSingleMatch(x2, y2);
-
-          // 다시 원상 복구
           board[x1][y1].type = type1;
           board[x2][y2].type = type2;
-
           return isMatch;
         }
 
-        // 특정 좌표(x, y)를 기준으로 가로/세로 3개가 연속되는지 단일 검사
         function checkSingleMatch(x, y) {
           let type = board[x][y].type;
           let countH = 1,
             countV = 1;
-
           for (
             let i = x - 1;
             i >= 0 && board[i][y] && board[i][y].type === type;
@@ -630,37 +668,31 @@
             j++
           )
             countV++;
-
           return countH >= 3 || countV >= 3;
         }
 
-        // 진행이 불가능할 때 기존 블록을 모두 파괴하고 새로 위에서 떨어뜨립니다.
-        function shuffleBoard() {
-          isLocked = true;
+        // ★ 진행 불가 시 몰래 강제로 맞출 수 있는 패턴을 심는 함수
+        function forceValidMove() {
+          // 안전한 중앙 부근 좌표를 찾습니다.
+          let rx = Math.floor(Math.random() * (BOARD_SIZE - 2));
+          let ry = Math.floor(Math.random() * (BOARD_SIZE - 1));
+          let type = k.choose(TYPES);
 
-          // 화면 중앙에 SHUFFLE 경고 텍스트 띄우기
-          k.add([
-            k.text("SHUFFLE!", { size: Math.max(32, k.width() * 0.1) }),
-            k.pos(k.center()),
-            k.anchor("center"),
-            k.color(255, 50, 50),
-            k.lifespan(1.5, { fade: 0.5 }), // 1.5초 뒤 서서히 사라짐
-            k.z(100),
-          ]);
-
-          k.wait(1.5, () => {
-            // 모든 타일 폭파
-            for (let x = 0; x < BOARD_SIZE; x++) {
-              for (let y = 0; y < BOARD_SIZE; y++) {
-                if (board[x][y]) {
-                  k.destroy(board[x][y]);
-                  board[x][y] = null;
-                }
-              }
+          const applyChange = (x, y, newType) => {
+            if (board[x][y]) {
+              board[x][y].type = newType;
+              board[x][y].text = newType; // (참고: 사진을 쓸 경우 board[x][y].use(k.sprite(newType)) 사용)
             }
-            // 전체 빈칸 리필 로직 재호출
-            fillEmptySpaces();
-          });
+          };
+
+          // ㄱ자 모양의 맞출 수 있는 함정 패턴 심기
+          applyChange(rx, ry, type);
+          applyChange(rx + 1, ry, type);
+          applyChange(rx + 2, ry + 1, type);
+
+          // 떨어지자마자 제멋대로 터지지 않도록 예방 조치
+          let otherType = k.choose(TYPES.filter((t) => t !== type));
+          applyChange(rx + 2, ry, otherType);
         }
 
         // 게임 시작

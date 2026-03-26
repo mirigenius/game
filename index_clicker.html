@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kaplay Local Test</title>
+    <script src="kaplay.js"></script>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      const k = kaplay({
+        background: [255, 255, 255], // 배경색을 흰색으로 설정
+      });
+
+      k.scene("clicker", () => {
+        k.background = [255, 230, 200]; // 따뜻한 배경색
+        let money = 0;
+        let autoClickRate = 0;
+
+        const moneyLabel = k.add([
+          k.text(`Money: $${money}`, { size: 48 }),
+          k.pos(k.center().x, 100),
+          k.anchor("center"),
+          k.color(0, 0, 0),
+        ]);
+
+        // 메인 클릭 버튼 (쿠키)
+        const cookie = k.add([
+          k.text("🍪", { size: 120 }),
+          k.pos(k.center()),
+          k.anchor("center"),
+          k.area(),
+          k.scale(1),
+        ]);
+
+        // 클릭 시 돈 증가 및 애니메이션
+        cookie.onClick(() => {
+          money += 1;
+          cookie.scale = k.vec2(1.2); // 커졌다가
+          k.wait(0.1, () => (cookie.scale = k.vec2(1))); // 다시 작아짐
+        });
+
+        // 업그레이드 버튼 (자동 클릭커)
+        const upgradeBtn = k.add([
+          k.rect(300, 60, { radius: 10 }),
+          k.pos(k.center().x, k.height() - 100),
+          k.anchor("center"),
+          k.color(0, 200, 100),
+          k.area(),
+        ]);
+
+        const upgradeText = k.add([
+          k.text("Buy Auto-Clicker ($10)", { size: 20 }),
+          k.pos(k.center().x, k.height() - 100),
+          k.anchor("center"),
+        ]);
+
+        upgradeBtn.onClick(() => {
+          if (money >= 10) {
+            money -= 10;
+            autoClickRate += 1; // 초당 1달러 추가
+            k.debug.log("Upgraded!");
+          }
+        });
+
+        // 루프: 돈 업데이트 및 자동 클릭 적용
+        k.onUpdate(() => {
+          money += autoClickRate * k.dt(); // 시간당 돈 증가 (자바스크립트의 Delta Time 활용)
+          moneyLabel.text = `Money: $${Math.floor(money)}`;
+        });
+      });
+    </script>
+  </body>
+</html>

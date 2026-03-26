@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kaplay Local Test</title>
+    <script src="kaplay.js"></script>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      const k = kaplay({
+        background: [255, 255, 255], // 배경색을 흰색으로 설정
+      });
+
+      // 1. 게임 플레이 장면 (Main)
+      k.scene("shooter", () => {
+        k.background = [20, 20, 40]; // 우주 배경
+        let score = 0;
+
+        // 플레이어 비행기
+        const player = k.add([
+          k.text("🚀", { size: 48 }),
+          k.pos(k.width() / 2, k.height() - 80),
+          k.area(),
+          k.anchor("center"),
+          "player",
+        ]);
+
+        // 좌우 이동 (자바스크립트 키 이벤트)
+        k.onKeyDown("left", () => {
+          if (player.pos.x > 40) player.move(-400, 0);
+        });
+        k.onKeyDown("right", () => {
+          if (player.pos.x < k.width() - 40) player.move(400, 0);
+        });
+
+        // 총알 발사 (스페이스바)
+        k.onKeyPress("space", () => {
+          k.add([
+            k.rect(4, 12),
+            k.pos(player.pos.x, player.pos.y - 40),
+            k.color(0, 255, 255),
+            k.area(),
+            k.move(k.UP, 600), // 위로 발사
+            k.offscreen({ destroy: true }), // 화면 밖으로 나가면 삭제 (메모리 관리)
+            "bullet",
+          ]);
+        });
+
+        // 적(운석) 생성
+        function spawnEnemy() {
+          k.add([
+            k.text("☄️", { size: 40 }),
+            k.pos(k.rand(40, k.width() - 40), -40),
+            k.area(),
+            k.move(k.DOWN, 200),
+            k.offscreen({ destroy: true }),
+            "enemy",
+          ]);
+          k.wait(k.rand(0.5, 1.5), spawnEnemy);
+        }
+        spawnEnemy();
+
+        // 총알과 적이 충돌했을 때
+        k.onCollide("bullet", "enemy", (b, e) => {
+          k.destroy(b);
+          k.destroy(e);
+          score += 10;
+          k.addExplosion(e.pos, 5, 20, 10); // 간단한 폭발 효과
+        });
+
+        // 적과 플레이어가 충돌했을 때
+        player.onCollide("enemy", () => {
+          k.shake();
+          k.go("lose", score);
+        });
+      });
+
+      k.scene("clicker", () => {
+    k.background = [255, 230, 200]; // 따뜻한 배경색
+    let money = 0;
+    let autoClickRate = 0;
+
+    const moneyLabel = k.add([
+        k.text(`Money: $${money}`, { size: 48 }),
+        k.pos(k.center().x, 100),
+        k.anchor("center"),
+        k.color(0, 0, 0),
+    ]);
+
+    // 메인 클릭 버튼 (쿠키)
+    const cookie = k.add([
+        k.text("🍪", { size: 120 }),
+        k.pos(k.center()),
+        k.anchor("center"),
+        k.area(),
+        k.scale(1),
+    ]);
+
+    // 클릭 시 돈 증가 및 애니메이션
+    cookie.onClick(() => {
+        money += 1;
+        cookie.scale = k.vec2(1.2); // 커졌다가
+        k.wait(0.1, () => cookie.scale = k.vec2(1)); // 다시 작아짐
+    });
+
+    // 업그레이드 버튼 (자동 클릭커)
+    const upgradeBtn = k.add([
+        k.rect(300, 60, { radius: 10 }),
+        k.pos(k.center().x, k.height() - 100),
+        k.anchor("center"),
+        k.color(0, 200, 100),
+        k.area(),
+    ]);
+
+    const upgradeText = k.add([
+        k.text("Buy Auto-Clicker ($10)", { size: 20 }),
+        k.pos(k.center().x, k.height() - 100),
+        k.anchor("center"),
+    ]);
+
+    upgradeBtn.onClick(() => {
+        if (money >= 10) {
+            money -= 10;
+            autoClickRate += 1; // 초당 1달러 추가
+            k.debug.log("Upgraded!");
+        }
+    });
+
+    // 루프: 돈 업데이트 및 자동 클릭 적용
+    k.onUpdate(() => {
+        money += autoClickRate * k.dt(); // 시간당 돈 증가 (자바스크립트의 Delta Time 활용)
+        moneyLabel.text = `Money: $${Math.floor(money)}`;
+    });
+});
+
+      k.go("shooter");
+    </script>
+  </body>
+</html>

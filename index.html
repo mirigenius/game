@@ -1,0 +1,306 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kaplay Local Test</title>
+    <script src="kaplay.js"></script>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      const k = kaplay({
+        background: [255, 255, 255],
+        touchToMouse: true, // 터치를 마우스 클릭으로 자동 인식
+      });
+
+      // 마지막으로 플레이한 게임을 기억해둘 변수
+      let lastGame = "";
+      const games = ["main", "shooter"];
+
+      // --- 겹치지 않는 랜덤 게임 실행 함수 ---
+      function startRandomGame() {
+        // 1. 전체 게임 목록에서 '방금 한 게임(lastGame)'을 제외한 새 목록을 만듭니다.
+        const availableGames = games.filter((game) => game !== lastGame);
+
+        // 2. 남은 게임들 중에서만 랜덤으로 하나를 뽑습니다.
+        const nextGame =
+          availableGames[Math.floor(Math.random() * availableGames.length)];
+
+        // 3. 다음 턴을 위해 방금 뽑은 게임을 기록해 둡니다.
+        lastGame = nextGame;
+
+        // 4. 해당 게임 씬으로 이동!
+        k.go(nextGame);
+      }
+
+      // 1. 공룡 게임 (Dino Run)
+      k.scene("main", () => {
+        k.setGravity(1600);
+        let score = 0;
+        const FLOOR_HEIGHT = 48;
+
+        const player = k.add([
+          k.text("🦖", { size: 64 }),
+          k.pos(80, k.height() - FLOOR_HEIGHT),
+          k.area(),
+          k.body(),
+          k.anchor("bot"),
+          k.color(0, 0, 0),
+        ]);
+
+        k.add([
+          k.rect(k.width(), 2),
+          k.pos(0, k.height() - FLOOR_HEIGHT),
+          k.area(),
+          k.body({ isStatic: true }),
+          k.color(0, 0, 0),
+        ]);
+
+        const scoreLabel = k.add([
+          k.text("Score: 0", { size: 24 }),
+          k.pos(k.width() - 150, 24),
+          k.color(0, 0, 0),
+        ]);
+
+        // 점프 함수 (에러 수정됨)
+        function jump() {
+          if (player.isGrounded()) {
+            player.jump(750);
+          }
+        }
+
+        // 입력 처리 (키보드 + 터치)
+        k.onKeyPress("space", jump);
+        k.onMousePress(jump);
+
+        function spawnObstacle() {
+          k.add([
+            k.text(k.choose(["🌵", "🧱", "🪨"]), { size: 56 }),
+            k.area(),
+            k.pos(k.width(), k.height() - FLOOR_HEIGHT),
+            k.anchor("bot"),
+            k.move(k.LEFT, 260),
+            k.color(0, 0, 0),
+            "obstacle",
+            { passed: false },
+          ]);
+          k.wait(k.rand(1.5, 3), spawnObstacle);
+        }
+        spawnObstacle();
+
+        k.onUpdate("obstacle", (obj) => {
+          if (obj.pos.x < player.pos.x && !obj.passed) {
+            score++;
+            obj.passed = true;
+            scoreLabel.text = "Score: " + score;
+          }
+        });
+
+        player.onCollide("obstacle", () => {
+          k.shake();
+          k.go("lose", score);
+        });
+      });
+
+      // 2. 슈팅 게임 (Shooter) - 에러 수정됨 ★
+      k.scene("shooter", () => {
+        k.background = [20, 20, 40];
+        let score = 0;
+
+        const player = k.add([
+          k.text("🚀", { size: 48 }),
+          k.pos(k.width() / 2, k.height() - 80),
+          k.area(),
+          k.anchor("center"),
+          "player",
+        ]);
+
+        // [모바일 최적화] 터치/마우스 위치를 따라다니도록 수정
+        k.onUpdate(() => {
+          if (k.isMouseDown()) {
+            const mPos = k.mousePos();
+            player.pos.x = k.lerp(player.pos.x, mPos.x, 0.2);
+          }
+        });
+
+        // [모바일 최적화] 터치 시 자동 발사
+        k.onMousePress(() => {
+          k.add([
+            k.rect(4, 12),
+            k.pos(player.pos.x, player.pos.y - 40),
+            k.color(0, 255, 255),
+            k.area(),
+            k.move(k.UP, 600),
+            k.offscreen({ destroy: true }),
+            "bullet",
+          ]);
+        });
+
+        // 키보드 지원 유지
+        k.onKeyPress("space", () => {
+          k.onMousePress(); // 터치 발사 로직 재활용
+        });
+
+        function spawnEnemy() {
+          k.add([
+            k.text("☄️", { size: 40 }),
+            k.pos(k.rand(40, k.width() - 40), -40),
+            k.area(),
+            k.move(k.DOWN, 240),
+            k.offscreen({ destroy: true }),
+            "enemy",
+          ]);
+          k.wait(k.rand(0.4, 1.2), spawnEnemy);
+        }
+        spawnEnemy();
+
+        // 1. 폭발 파티클 '생성'만 담당하는 함수
+        function addExplosion(p) {
+          for (let i = 0; i < 8; i++) {
+            k.add([
+              k.pos(p),
+              k.rect(k.rand(4, 8), k.rand(4, 8)),
+              k.color(255, 255, 255),
+              k.move(k.rand(0, 360), k.rand(100, 200)),
+              k.opacity(1),
+              "exp", // ★ "exp"라는 태그표를 붙여줍니다.
+            ]);
+          }
+        }
+
+        // 2. 폭발 파티클 '관리'를 전담하는 루프 (에러 원천 차단)
+        // "exp" 태그가 붙은 모든 객체를 찾아 매 프레임마다 이 함수를 실행합니다.
+        k.onUpdate("exp", (particle) => {
+          // 객체가 확실히 존재할 때만 접근하므로 undefined 에러가 나지 않습니다.
+          particle.opacity -= k.dt() * 2;
+          if (particle.opacity <= 0) {
+            k.destroy(particle);
+          }
+        });
+
+        // 3. 충돌 감지 로직
+        k.onCollide("bullet", "enemy", (b, e) => {
+          k.destroy(b);
+          k.destroy(e);
+          score += 10;
+          addExplosion(e.pos); // 폭발 생성!
+        });
+
+        player.onCollide("enemy", () => {
+          k.shake();
+          k.go("lose", score);
+        });
+      });
+
+      // 3. 클리커 게임 (Clicker)
+      k.scene("clicker", () => {
+        k.background = [255, 230, 200];
+        let money = 0;
+        let autoClickRate = 0;
+
+        const moneyLabel = k.add([
+          k.text(`Money: $${money}`, { size: 42 }),
+          k.pos(k.center().x, 80),
+          k.anchor("center"),
+          k.color(0, 0, 0),
+        ]);
+
+        const cookie = k.add([
+          k.text("🍪", { size: 140 }),
+          k.pos(k.center()),
+          k.anchor("center"),
+          k.area(),
+        ]);
+
+        // [모바일 최적화] 아이콘 터치 시 작동
+        cookie.onClick(() => {
+          money += 1;
+          cookie.scale = k.vec2(1.2);
+          k.wait(0.1, () => (cookie.scale = k.vec2(1)));
+        });
+
+        const upgradeBtn = k.add([
+          k.rect(320, 70, { radius: 10 }),
+          k.pos(k.center().x, k.height() - 100),
+          k.anchor("center"),
+          k.color(0, 200, 100),
+          k.area(),
+        ]);
+
+        const upgradeText = k.add([
+          k.text("Buy Auto-Clicker ($10)", { size: 22 }),
+          k.pos(k.center().x, k.height() - 100),
+          k.anchor("center"),
+        ]);
+
+        upgradeBtn.onClick(() => {
+          if (money >= 10) {
+            money -= 10;
+            autoClickRate += 1;
+          }
+        });
+
+        k.onUpdate(() => {
+          money += autoClickRate * k.dt();
+          moneyLabel.text = `Money: $${Math.floor(money)}`;
+        });
+
+        k.onUpdate(() => {
+          if (money >= 100) {
+            k.add([
+              k.text("CLEAR!", { size: 50 }),
+              k.pos(k.center()),
+              k.anchor("center"),
+            ]);
+            k.wait(2, () => k.go("lose", 100));
+          }
+        });
+      });
+
+      // 공통 게임 오버 장면
+      k.scene("lose", (finalScore) => {
+        k.background = [255, 255, 255];
+        k.add([
+          k.text("GAME OVER", { size: 64 }),
+          k.pos(k.center().x, k.center().y - 40),
+          k.anchor("center"),
+          k.color(0, 0, 0),
+        ]);
+
+        k.add([
+          k.text(`Score: ${finalScore}`, { size: 32 }),
+          k.pos(k.center().x, k.center().y + 30),
+          k.anchor("center"),
+          k.color(100, 100, 100),
+        ]);
+
+        const btn = k.add([
+          k.rect(220, 60, { radius: 8 }),
+          k.pos(k.center().x, k.center().y + 120),
+          k.anchor("center"),
+          k.color(0, 0, 0),
+          k.area(),
+        ]);
+
+        k.add([
+          k.text("NEXT RANDOM", { size: 20 }),
+          k.pos(k.center().x, k.center().y + 120),
+          k.anchor("center"),
+          k.color(255, 255, 255),
+        ]);
+
+        btn.onClick(startRandomGame);
+        k.onKeyPress("space", startRandomGame);
+      });
+
+      // --- 첫 실행 ---
+      startRandomGame();
+    </script>
+  </body>
+</html>

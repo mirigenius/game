@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kaplay Local Test</title>
+    <script src="kaplay.js"></script>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      const k = kaplay({
+        background: [255, 255, 255], // 배경색을 흰색으로 설정
+      });
+
+      // 1. 게임 플레이 장면 (Main)
+      k.scene("main", () => {
+        k.setGravity(1600);
+        let score = 0;
+        const FLOOR_HEIGHT = 48;
+
+        // 플레이어 (공룡 🦖)
+        const player = k.add([
+          k.text("🦖", { size: 64 }),
+          k.pos(80, k.height() - FLOOR_HEIGHT),
+          k.area(),
+          k.body(),
+          k.anchor("bot"),
+          k.color(0, 0, 0), // 공룡 색상을 검정으로 (흰 배경 대비)
+        ]);
+
+        // 바닥 (단순한 검은 선으로 변경)
+        k.add([
+          k.rect(k.width(), 2), // 얇은 선
+          k.pos(0, k.height() - FLOOR_HEIGHT),
+          k.area(),
+          k.body({ isStatic: true }),
+          k.color(0, 0, 0),
+        ]);
+
+        // 점수판 (검정색 텍스트)
+        const scoreLabel = k.add([
+          k.text("Score: 0", { size: 24 }),
+          k.pos(k.width() - 150, 24),
+          k.color(0, 0, 0),
+        ]);
+
+        // 장애물 생성 함수
+        function spawnObstacle() {
+          const obstacleType = k.choose(["🌵", "🧱", "🪨"]);
+          k.add([
+            k.text(obstacleType, { size: 56 }),
+            k.area(),
+            k.pos(k.width(), k.height() - FLOOR_HEIGHT),
+            k.anchor("bot"),
+            k.move(k.LEFT, 240),
+            k.color(0, 0, 0), // 장애물도 검정색으로
+            "obstacle",
+            { passed: false },
+          ]);
+          k.wait(k.rand(1.5, 3), spawnObstacle);
+        }
+        spawnObstacle();
+
+        // 점수 체크
+        k.onUpdate("obstacle", (obj) => {
+          if (obj.pos.x < player.pos.x && !obj.passed) {
+            score++;
+            obj.passed = true;
+            scoreLabel.text = "Score: " + score;
+          }
+        });
+
+        // 점프
+        k.onKeyPress("space", () => {
+          if (player.isGrounded()) player.jump(750);
+        });
+
+        // 충돌 처리
+        player.onCollide("obstacle", () => {
+          k.shake();
+          k.go("lose", score);
+        });
+      });
+
+      // 2. 게임 오버 장면 (Lose)
+      k.scene("lose", (finalScore) => {
+        k.add([
+          k.text("GAME OVER", { size: 64 }),
+          k.pos(k.center().x, k.center().y - 40),
+          k.anchor("center"),
+          k.color(0, 0, 0),
+        ]);
+
+        k.add([
+          k.text(`Final Score: ${finalScore}`, { size: 32 }),
+          k.pos(k.center().x, k.center().y + 30),
+          k.anchor("center"),
+          k.color(100, 100, 100),
+        ]);
+
+        // 리트라이 버튼
+        const btn = k.add([
+          k.rect(200, 60, { radius: 8 }),
+          k.pos(k.center().x, k.center().y + 120),
+          k.anchor("center"),
+          k.color(0, 0, 0),
+          k.area(),
+        ]);
+
+        k.add([
+          k.text("RETRY", { size: 24 }),
+          k.pos(k.center().x, k.center().y + 120),
+          k.anchor("center"),
+          k.color(255, 255, 255),
+        ]);
+
+        btn.onClick(() => k.go("main"));
+        k.onKeyPress("space", () => k.go("main"));
+      });
+
+      k.go("main");
+    </script>
+  </body>
+</html>

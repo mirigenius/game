@@ -425,11 +425,14 @@
           k.wait(0.25, () => checkMatches({ tileA: tileA, tileB: tileB }));
         }
 
-        // --- 4. 매치 검사 ---
+        // --- 4. 매치 검사 (버그 수정 버전) ---
         function checkMatches(swappedTiles = null) {
+          // ★ 최우선 조건: 이미 게임이 끝났다면 어떤 로직도 실행하지 않음
           if (gameEnded) return;
+
           let matched = new Set();
 
+          // 가로/세로 매칭 검사 로직 (동일)
           for (let y = 0; y < BOARD_SIZE; y++) {
             for (let x = 0; x < BOARD_SIZE - 2; x++) {
               let t1 = board[x][y],
@@ -468,11 +471,12 @@
           }
 
           if (matched.size > 0) {
+            // [터질 게 있을 때]
             k.shake(2);
-            timeLeft = 60; // 60초 리셋
-            timerLabel.color = k.rgb(0, 200, 0);
+            timeLeft = 60; // 시간 리셋
+            timerLabel.color = k.rgb(0, 255, 0);
             k.wait(0.3, () => {
-              if (timerLabel) timerLabel.color = k.rgb(255, 0, 0);
+              if (!gameEnded) timerLabel.color = k.rgb(255, 0, 0);
             });
 
             let earnedPoints = matched.size * 10;
@@ -498,7 +502,9 @@
             });
             k.wait(0.2, applyGravity);
           } else {
+            // [터질 게 없을 때]
             if (swappedTiles) {
+              // 사용자가 직접 바꿨는데 꽝인 경우 -> 되돌리기
               let tA = swappedTiles.tileA,
                 tB = swappedTiles.tileB;
               const posA = k.vec2(tA.pos.x, tA.pos.y),
@@ -527,11 +533,16 @@
               board[tA.gridX][tA.gridY] = tA;
               board[tB.gridX][tB.gridY] = tB;
 
-              k.wait(0.25, () => (isLocked = false));
+              k.wait(0.25, () => {
+                if (!gameEnded) isLocked = false;
+              });
             } else {
-              // 더 이상 맞출 게 없어도 셔플 화면을 띄우지 않고, 몰래 해결합니다!
-              if (!hasAnyMove()) forceValidMove();
-              isLocked = false;
+              // 하늘에서 떨어졌는데 터질 게 없는 경우 -> 게임 계속 진행
+              if (!hasAnyMove()) {
+                forceValidMove(); // 스마트 드롭 작동
+              }
+              // ★ 핵심: 여기서 무조건 잠금을 푸는 게 아니라 게임 종료 여부를 한 번 더 확인
+              if (!gameEnded) isLocked = false;
             }
           }
         }

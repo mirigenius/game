@@ -21,7 +21,7 @@
 
       // 마지막으로 플레이한 게임을 기억해둘 변수
       let lastGame = "";
-      const games = ["main", "shooter"];
+      const games = ["main", "shooter", "match3"];
 
       // --- 겹치지 않는 랜덤 게임 실행 함수 ---
       function startRandomGame() {
@@ -113,12 +113,23 @@
         k.background = [20, 20, 40];
         let score = 0;
 
+        // ★ 모바일 화면 너비에 맞춘 동적 사이즈 (화면 너비의 15% 크기)
+        const baseSize = k.width() * 0.1;
+
+        // 우주선 (크기 키움)
         const player = k.add([
-          k.text("🚀", { size: 48 }),
-          k.pos(k.width() / 2, k.height() - 80),
+          k.text("🚀", { size: baseSize }),
+          k.pos(k.width() / 2, k.height() - baseSize * 2), // 위치도 하단에 맞게 조정
           k.area(),
           k.anchor("center"),
           "player",
+        ]);
+
+        // 점수판도 보기 좋게 추가했습니다
+        const scoreLabel = k.add([
+          k.text("Score: 0", { size: baseSize * 0.5 }),
+          k.pos(20, 20),
+          k.color(255, 255, 255),
         ]);
 
         // [모바일 최적화] 터치/마우스 위치를 따라다니도록 수정
@@ -129,14 +140,15 @@
           }
         });
 
-        // [모바일 최적화] 터치 시 자동 발사
+        // 화면 터치 시 총알 발사
         k.onMousePress(() => {
           k.add([
-            k.rect(4, 12),
-            k.pos(player.pos.x, player.pos.y - 40),
+            // 총알 크기도 baseSize에 비례해서 두툼하게 키움
+            k.rect(baseSize * 0.15, baseSize * 0.5),
+            k.pos(player.pos.x, player.pos.y - baseSize),
             k.color(0, 255, 255),
             k.area(),
-            k.move(k.UP, 600),
+            k.move(k.UP, 800), // 커진 화면에 맞춰 총알 속도도 살짝 빠르게 (600 -> 800)
             k.offscreen({ destroy: true }),
             "bullet",
           ]);
@@ -147,53 +159,59 @@
           k.onMousePress(); // 터치 발사 로직 재활용
         });
 
+        // 적 생성
         function spawnEnemy() {
           k.add([
-            k.text("☄️", { size: 40 }),
-            k.pos(k.rand(40, k.width() - 40), -40),
+            k.text("☄️", { size: baseSize * 0.9 }), // 운석은 우주선보다 살짝 작게
+            // 운석이 화면 밖에서 튀어나오지 않도록 x좌표 범위 제한
+            k.pos(k.rand(baseSize, k.width() - baseSize), -baseSize),
             k.area(),
-            k.move(k.DOWN, 240),
+            k.move(k.DOWN, k.rand(200, 400)), // 떨어지는 속도를 약간 랜덤하게!
             k.offscreen({ destroy: true }),
             "enemy",
           ]);
-          k.wait(k.rand(0.4, 1.2), spawnEnemy);
+          k.wait(k.rand(0.4, 1.0), spawnEnemy);
         }
         spawnEnemy();
 
-        // 1. 폭발 파티클 '생성'만 담당하는 함수
+        // 폭발 입자 생성 함수 (크기도 커짐)
         function addExplosion(p) {
           for (let i = 0; i < 8; i++) {
             k.add([
               k.pos(p),
-              k.rect(k.rand(4, 8), k.rand(4, 8)),
+              // 파편 크기도 동적으로 계산
+              k.rect(
+                k.rand(baseSize * 0.1, baseSize * 0.2),
+                k.rand(baseSize * 0.1, baseSize * 0.2),
+              ),
               k.color(255, 255, 255),
-              k.move(k.rand(0, 360), k.rand(100, 200)),
+              k.move(k.rand(0, 360), k.rand(150, 300)),
               k.opacity(1),
-              "exp", // ★ "exp"라는 태그표를 붙여줍니다.
+              "exp",
             ]);
           }
         }
 
-        // 2. 폭발 파티클 '관리'를 전담하는 루프 (에러 원천 차단)
-        // "exp" 태그가 붙은 모든 객체를 찾아 매 프레임마다 이 함수를 실행합니다.
+        // 폭발 파티클 관리 로직 (에러 방지용으로 분리했던 것 유지)
         k.onUpdate("exp", (particle) => {
-          // 객체가 확실히 존재할 때만 접근하므로 undefined 에러가 나지 않습니다.
           particle.opacity -= k.dt() * 2;
           if (particle.opacity <= 0) {
             k.destroy(particle);
           }
         });
 
-        // 3. 충돌 감지 로직
+        // 충돌 처리 (총알 vs 운석)
         k.onCollide("bullet", "enemy", (b, e) => {
           k.destroy(b);
           k.destroy(e);
           score += 10;
-          addExplosion(e.pos); // 폭발 생성!
+          scoreLabel.text = `Score: ${score}`; // 점수판 업데이트
+          addExplosion(e.pos);
         });
 
+        // 충돌 처리 (우주선 vs 운석)
         player.onCollide("enemy", () => {
-          k.shake();
+          k.shake(10); // 부딪히면 화면 진동 쾅!
           k.go("lose", score);
         });
       });
@@ -261,6 +279,338 @@
             k.wait(2, () => k.go("lose", 100));
           }
         });
+      });
+
+      k.scene("match3", () => {
+        k.background = [250, 240, 230];
+
+        const BOARD_SIZE = 5;
+
+        // ★ Adaptive Scaling: 모바일 화면 크기에 맞춰 자동으로 크기 계산
+        // 화면의 가로, 세로 중 더 작은 쪽을 기준으로 삼습니다.
+        const minDimension = Math.min(k.width(), k.height());
+        // 화면 작은 쪽 크기의 85%를 보드판이 차지하도록 계산합니다. (여백 15% 남김)
+        const TILE_SIZE = (minDimension * 0.85) / BOARD_SIZE;
+        // 실제 아이콘/사진 크기는 타일 크기의 80% 정도로 설정합니다.
+        const CONTENT_SIZE = TILE_SIZE * 0.8;
+
+        // TYPES는 이전 제안처럼 이모지나 이미지 이름으로 설정하세요.
+        // 올려주신 사진을 쓴다면: const TYPES = ["rm", "jin", "suga", "jhope"];
+        const TYPES = ["🐨", "🐹", "🐱", "🐿️", "🐥", "🐻", "🐰"];
+
+        let board = [];
+        let isLocked = false;
+        let swipeStartPos = null;
+        let swipingTile = null;
+
+        // 중앙 정렬을 위한 Offset 계산 (자동으로 dynamic하게 바뀝니다)
+        const offsetX =
+          k.center().x - (BOARD_SIZE * TILE_SIZE) / 2 + TILE_SIZE / 2;
+        const offsetY =
+          k.center().y - (BOARD_SIZE * TILE_SIZE) / 2 + TILE_SIZE / 2;
+
+        // --- 1. 초기 생성 (크기 동적 적용) ---
+        for (let x = 0; x < BOARD_SIZE; x++) {
+          board[x] = [];
+          for (let y = 0; y < BOARD_SIZE; y++) {
+            const itemType = k.choose(TYPES);
+
+            // ★ 케이스별 그리기 (둘 중 하나만 선택하세요)
+
+            // 케이스 A: 이모지를 쓸 때
+            const tile = k.add([
+              k.text(itemType, { size: CONTENT_SIZE }), // ★ 계산된 크기 적용
+              k.pos(x * TILE_SIZE + offsetX, y * TILE_SIZE + offsetY),
+              k.anchor("center"),
+              k.area(),
+              "tile",
+              { gridX: x, gridY: y, type: itemType },
+            ]);
+
+            // 케이스 B: RM 사진(image_3.png) 같은 스프라이트를 쓸 때
+            // const tile = k.add([
+            //     k.sprite(itemType, { width: CONTENT_SIZE, height: CONTENT_SIZE }), // ★ 계산된 크기 적용
+            //     k.pos(x * TILE_SIZE + offsetX, y * TILE_SIZE + offsetY),
+            //     k.anchor("center"),
+            //     k.area(),
+            //     "tile",
+            //     { gridX: x, gridY: y, type: itemType }
+            // ]);
+
+            board[x][y] = tile;
+          }
+        }
+
+        // 제목 텍스트 위치도 약간 상단으로 조정
+        k.add([
+          k.text("Cielo Puzzle", { size: Math.max(24, TILE_SIZE / 2) }),
+          k.pos(k.center().x, 60),
+          k.anchor("center"),
+          k.color(100, 50, 0),
+        ]);
+
+        // --- 2. 스와이프 로직 (민감도 dynamic 적용) ---
+        k.onMousePress(() => {
+          if (isLocked) return;
+          let mPos = k.mousePos();
+          for (let t of k.get("tile")) {
+            if (
+              Math.abs(t.pos.x - mPos.x) < TILE_SIZE / 2 &&
+              Math.abs(t.pos.y - mPos.y) < TILE_SIZE / 2
+            ) {
+              swipingTile = t;
+              swipeStartPos = mPos;
+              break;
+            }
+          }
+        });
+
+        k.onMouseRelease(() => {
+          if (!swipingTile || !swipeStartPos || isLocked) return;
+          let mPos = k.mousePos();
+          let dx = mPos.x - swipeStartPos.x;
+          let dy = mPos.y - swipeStartPos.y;
+
+          // ★ 민감도 조절: 타일 크기의 1/4 이상 움직여야 스와이프로 인정
+          const minSwipeDistance = TILE_SIZE / 4;
+          if (
+            Math.abs(dx) > minSwipeDistance ||
+            Math.abs(dy) > minSwipeDistance
+          ) {
+            let targetX = swipingTile.gridX;
+            let targetY = swipingTile.gridY;
+            if (Math.abs(dx) > Math.abs(dy)) {
+              targetX += dx > 0 ? 1 : -1;
+            } else {
+              targetY += dy > 0 ? 1 : -1;
+            }
+            if (
+              targetX >= 0 &&
+              targetX < BOARD_SIZE &&
+              targetY >= 0 &&
+              targetY < BOARD_SIZE
+            ) {
+              let targetTile = board[targetX][targetY];
+              if (targetTile) {
+                swapTiles(swipingTile, targetTile);
+              }
+            }
+          }
+          swipingTile = null;
+          swipeStartPos = null;
+        });
+
+        // --- 교환 전용 함수 ---
+        function swapTiles(tileA, tileB) {
+          isLocked = true;
+          const posA = k.vec2(tileA.pos.x, tileA.pos.y);
+          const posB = k.vec2(tileB.pos.x, tileB.pos.y);
+
+          k.tween(
+            tileA.pos,
+            posB,
+            0.2,
+            (p) => (tileA.pos = p),
+            k.easings.easeOutQuad,
+          );
+          k.tween(
+            tileB.pos,
+            posA,
+            0.2,
+            (p) => (tileB.pos = p),
+            k.easings.easeOutQuad,
+          );
+
+          const tempX = tileA.gridX;
+          const tempY = tileA.gridY;
+          tileA.gridX = tileB.gridX;
+          tileA.gridY = tileB.gridY;
+          tileB.gridX = tempX;
+          tileB.gridY = tempY;
+
+          board[tileA.gridX][tileA.gridY] = tileA;
+          board[tileB.gridX][tileB.gridY] = tileB;
+
+          // ★ 변경점: 타일을 바꾼 후, 어떤 타일을 바꿨는지 정보를 같이 넘겨줍니다.
+          k.wait(0.25, () => checkMatches({ tileA: tileA, tileB: tileB }));
+        }
+
+        // --- 3. 매치 검사 ---
+        // 파라미터로 swappedTiles를 받습니다. (기본값은 null)
+        function checkMatches(swappedTiles = null) {
+          let matched = new Set();
+
+          // 가로 검사
+          for (let y = 0; y < BOARD_SIZE; y++) {
+            for (let x = 0; x < BOARD_SIZE - 2; x++) {
+              let t1 = board[x][y];
+              let t2 = board[x + 1][y];
+              let t3 = board[x + 2][y];
+              if (
+                t1 &&
+                t2 &&
+                t3 &&
+                t1.type === t2.type &&
+                t2.type === t3.type
+              ) {
+                matched.add(t1);
+                matched.add(t2);
+                matched.add(t3);
+              }
+            }
+          }
+
+          // 세로 검사
+          for (let x = 0; x < BOARD_SIZE; x++) {
+            for (let y = 0; y < BOARD_SIZE - 2; y++) {
+              let t1 = board[x][y];
+              let t2 = board[x][y + 1];
+              let t3 = board[x][y + 2];
+              if (
+                t1 &&
+                t2 &&
+                t3 &&
+                t1.type === t2.type &&
+                t2.type === t3.type
+              ) {
+                matched.add(t1);
+                matched.add(t2);
+                matched.add(t3);
+              }
+            }
+          }
+
+          if (matched.size > 0) {
+            k.shake(2);
+            matched.forEach((t) => {
+              k.destroy(t);
+              board[t.gridX][t.gridY] = null;
+            });
+            k.wait(0.2, applyGravity);
+          } else {
+            // ★ 변경점: 매칭된 게 없는데, 방금 사용자가 스와이프 한 거라면?
+            if (swappedTiles) {
+              let tA = swappedTiles.tileA;
+              let tB = swappedTiles.tileB;
+
+              // 시각적으로 다시 원래 자리로 돌려보냅니다 (Revert Tween)
+              const posA = k.vec2(tA.pos.x, tA.pos.y);
+              const posB = k.vec2(tB.pos.x, tB.pos.y);
+              k.tween(
+                tA.pos,
+                posB,
+                0.2,
+                (p) => (tA.pos = p),
+                k.easings.easeOutQuad,
+              );
+              k.tween(
+                tB.pos,
+                posA,
+                0.2,
+                (p) => (tB.pos = p),
+                k.easings.easeOutQuad,
+              );
+
+              // 배열 데이터(논리적 위치)도 다시 원상 복구합니다
+              const tempX = tA.gridX;
+              const tempY = tA.gridY;
+              tA.gridX = tB.gridX;
+              tA.gridY = tB.gridY;
+              tB.gridX = tempX;
+              tB.gridY = tempY;
+
+              board[tA.gridX][tA.gridY] = tA;
+              board[tB.gridX][tB.gridY] = tB;
+
+              // 되돌아가는 애니메이션(0.2초)이 끝난 후 잠금을 해제합니다
+              k.wait(0.25, () => (isLocked = false));
+            } else {
+              // 스와이프가 아닌 일반 연쇄 검사에서 터질 게 없으면 그냥 잠금만 해제
+              isLocked = false;
+            }
+          }
+        }
+
+        // --- 4. 중력 작용 (Updated with dynamic offsets) ---
+        function applyGravity() {
+          for (let x = 0; x < BOARD_SIZE; x++) {
+            for (let y = BOARD_SIZE - 1; y >= 0; y--) {
+              if (board[x][y] === null) {
+                for (let aboveY = y - 1; aboveY >= 0; aboveY--) {
+                  if (board[x][aboveY] !== null) {
+                    let tileToFall = board[x][aboveY];
+                    board[x][y] = tileToFall;
+                    board[x][aboveY] = null;
+                    tileToFall.gridY = y;
+
+                    const targetPos = k.vec2(
+                      x * TILE_SIZE + offsetX,
+                      y * TILE_SIZE + offsetY,
+                    );
+                    k.tween(
+                      tileToFall.pos,
+                      targetPos,
+                      0.2,
+                      (p) => (tileToFall.pos = p),
+                      k.easings.easeOutQuad,
+                    );
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          k.wait(0.25, fillEmptySpaces);
+        }
+
+        // --- 5. 빈칸 리필 (Updated with dynamic offsets) ---
+        function fillEmptySpaces() {
+          let filled = false;
+          for (let x = 0; x < BOARD_SIZE; x++) {
+            for (let y = 0; y < BOARD_SIZE; y++) {
+              if (board[x][y] === null) {
+                filled = true;
+                const itemType = k.choose(TYPES);
+
+                // ★ 케이스별 그리기 수정 (초기 생성과 동일하게)
+                const newTile = k.add([
+                  // 케이스 A: 이모지
+                  k.text(itemType, { size: CONTENT_SIZE }),
+
+                  // 케이스 B: 사진
+                  // k.sprite(itemType, { width: CONTENT_SIZE, height: CONTENT_SIZE }),
+
+                  k.pos(x * TILE_SIZE + offsetX, offsetY - minDimension * 0.3), // 더 위에서 떨어지게
+                  k.anchor("center"),
+                  k.area(),
+                  "tile",
+                  { gridX: x, gridY: y, type: itemType },
+                ]);
+                board[x][y] = newTile;
+
+                const targetPos = k.vec2(
+                  x * TILE_SIZE + offsetX,
+                  y * TILE_SIZE + offsetY,
+                );
+                k.tween(
+                  newTile.pos,
+                  targetPos,
+                  0.2,
+                  (p) => (newTile.pos = p),
+                  k.easings.easeOutQuad,
+                );
+              }
+            }
+          }
+
+          if (filled) {
+            k.wait(0.3, checkMatches);
+          } else {
+            isLocked = false;
+          }
+        }
+
+        k.wait(0.5, checkMatches);
       });
 
       // 공통 게임 오버 장면

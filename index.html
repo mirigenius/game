@@ -206,27 +206,31 @@
       // 3. 퍼즐 게임 (Match3)
       k.scene("match3", () => {
         k.background = [250, 240, 230];
+
         const BOARD_SIZE = 5;
         const minDimension = Math.min(k.width(), k.height());
         const TILE_SIZE = (minDimension * 0.85) / BOARD_SIZE;
         const CONTENT_SIZE = TILE_SIZE * 0.8;
         const TYPES = ["🐨", "🐹", "🐱", "🐥", "🐰"];
+
         let board = [];
         let isLocked = false;
-        let swipeStartPos = null;
-        let swipingTile = null;
         let score = 0;
         let timeLeft = 60;
         let gameEnded = false;
+
         const offsetX =
           k.center().x - (BOARD_SIZE * TILE_SIZE) / 2 + TILE_SIZE / 2;
         const offsetY =
           k.center().y - (BOARD_SIZE * TILE_SIZE) / 2 + TILE_SIZE / 2 + 50;
 
+        // --- 1. 초기 보드 배열 초기화 ---
         for (let x = 0; x < BOARD_SIZE; x++) {
           board[x] = [];
           for (let y = 0; y < BOARD_SIZE; y++) board[x][y] = null;
         }
+
+        // --- 2. 상단 UI ---
         k.add([
           k.text("Puzzle", { size: 24 }),
           k.pos(20, 30),
@@ -255,6 +259,10 @@
           }
         });
 
+        // --- 3. 스와이프 조작 ---
+        let swipingTile = null;
+        let swipeStartPos = null;
+
         k.onMousePress(() => {
           if (isLocked || gameEnded) return;
           swipeStartPos = k.mousePos();
@@ -268,41 +276,81 @@
             }
           }
         });
+
         k.onMouseRelease(() => {
           if (!swipingTile || isLocked || gameEnded) return;
           let mPos = k.mousePos();
           let dx = mPos.x - swipeStartPos.x,
             dy = mPos.y - swipeStartPos.y;
+
           if (Math.abs(dx) > TILE_SIZE / 4 || Math.abs(dy) > TILE_SIZE / 4) {
             let tx = swipingTile.gridX,
               ty = swipingTile.gridY;
             if (Math.abs(dx) > Math.abs(dy)) tx += dx > 0 ? 1 : -1;
             else ty += dy > 0 ? 1 : -1;
-            if (tx >= 0 && tx < BOARD_SIZE && ty >= 0 && ty < BOARD_SIZE)
-              swapTiles(swipingTile, board[tx][ty]);
+
+            if (tx >= 0 && tx < BOARD_SIZE && ty >= 0 && ty < BOARD_SIZE) {
+              swapTiles(swipingTile, board[tx][ty], false); // 첫 번째 스와이프 (revert 아님)
+            }
           }
           swipingTile = null;
         });
 
-        function swapTiles(tileA, tileB) {
-          if (!tileB) return;
+        // --- 4. 교환 로직 (무한 루프 방지 핵심) ---
+        function swapTiles(tileA, tileB, isReverting = false) {
+          if (!tileA || !tileB) return;
           isLocked = true;
-          k.tween(tileA.pos, tileB.pos, 0.2, (p) => (tileA.pos = p));
-          k.tween(tileB.pos, tileA.pos, 0.2, (p) => (tileB.pos = p));
-          const tx = tileA.gridX,
-            ty = tileA.gridY;
-          tileA.gridX = tileB.gridX;
-          tileA.gridY = tileB.gridY;
-          tileB.gridX = tx;
-          tileB.gridY = ty;
-          board[tileA.gridX][tileA.gridY] = tileA;
-          board[tileB.gridX][tileB.gridY] = tileB;
-          k.wait(0.25, () => checkMatches({ tileA, tileB }));
+
+          // 시각적 이동
+          const posA = k.vec2(tileA.pos.x, tileA.pos.y);
+          const posB = k.vec2(tileB.pos.x, tileB.pos.y);
+          k.tween(
+            tileA.pos,
+            posB,
+            0.2,
+            (p) => (tileA.pos = p),
+            k.easings.easeOutQuad,
+          );
+          k.tween(
+            tileB.pos,
+            posA,
+            0.2,
+            (p) => (tileB.pos = p),
+            k.easings.easeOutQuad,
+          );
+
+          // 배열 위치 교환
+          const ax = tileA.gridX,
+            ay = tileA.gridY;
+          const bx = tileB.gridX,
+            by = tileB.gridY;
+
+          tileA.gridX = bx;
+          tileA.gridY = by;
+          tileB.gridX = ax;
+          tileB.gridY = ay;
+
+          board[bx][by] = tileA;
+          board[ax][ay] = tileB;
+
+          // ★ 매칭 검사 여부 결정
+          k.wait(0.25, () => {
+            if (!isReverting) {
+              // 매칭이 안 되면 되돌리라는 정보를 담아 보냄
+              checkMatches({ tileA, tileB });
+            } else {
+              // 되돌리기 이동이 끝났으니 잠금 해제
+              isLocked = false;
+            }
+          });
         }
 
+        // --- 5. 매치 검사 ---
         function checkMatches(swapped = null) {
           if (gameEnded) return;
           let matched = new Set();
+
+          // 가로 검사
           for (let y = 0; y < BOARD_SIZE; y++) {
             for (let x = 0; x < BOARD_SIZE - 2; x++) {
               let t1 = board[x][y],
@@ -313,7 +361,8 @@
                 t2 &&
                 t3 &&
                 t1.type === t2.type &&
-                t2.type === t3.type
+                t1.type === board[x + 1][y].type &&
+                t1.type === board[x + 2][y].type
               ) {
                 matched.add(t1);
                 matched.add(t2);
@@ -321,6 +370,7 @@
               }
             }
           }
+          // 세로 검사
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = 0; y < BOARD_SIZE - 2; y++) {
               let t1 = board[x][y],
@@ -331,7 +381,8 @@
                 t2 &&
                 t3 &&
                 t1.type === t2.type &&
-                t2.type === t3.type
+                t1.type === board[x][y + 1].type &&
+                t1.type === board[x][y + 2].type
               ) {
                 matched.add(t1);
                 matched.add(t2);
@@ -341,29 +392,32 @@
           }
 
           if (matched.size > 0) {
-            timeLeft = 60;
+            timeLeft = 60; // 시간 충전
             score += matched.size * 10;
             scoreLabel.text = `Score: ${score}`;
             matched.forEach((t) => {
               k.destroy(t);
-              board[t.gridX][t.gridY] = null;
+              board[t.gridX][t.gridY] = null; // ★ 빈 공간 처리 확실히
             });
             k.wait(0.2, applyGravity);
-          } else if (swapped) {
-            swapTiles(swapped.tileA, swapped.tileB);
-            k.wait(0.25, () => (isLocked = false));
           } else {
-            isLocked = false;
-            if (!hasAnyMove()) forceValidMove();
+            // 매칭된 게 없는데 방금 스와이프를 한 거라면? 원래대로 되돌림 (revert flag ON)
+            if (swapped) {
+              swapTiles(swapped.tileA, swapped.tileB, true);
+            } else {
+              isLocked = false;
+              if (!hasAnyMove()) forceValidMove();
+            }
           }
         }
 
+        // --- 6. 중력 및 리필 (빈칸 버그 해결) ---
         function applyGravity() {
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = BOARD_SIZE - 1; y >= 0; y--) {
               if (board[x][y] === null) {
                 for (let ay = y - 1; ay >= 0; ay--) {
-                  if (board[x][ay]) {
+                  if (board[x][ay] !== null) {
                     let t = board[x][ay];
                     board[x][y] = t;
                     board[x][ay] = null;
@@ -384,45 +438,122 @@
         }
 
         function fillEmptySpaces() {
-          let nt = [];
+          let newTiles = [];
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = 0; y < BOARD_SIZE; y++) {
               if (board[x][y] === null) {
                 const type = k.choose(TYPES);
                 const t = k.add([
                   k.text(type, { size: CONTENT_SIZE }),
-                  k.pos(x * TILE_SIZE + offsetX, -100),
+                  k.pos(x * TILE_SIZE + offsetX, -100), // 화면 밖 위에서 생성
                   k.anchor("center"),
                   k.area(),
                   "tile",
                   { gridX: x, gridY: y, type: type },
                 ]);
                 board[x][y] = t;
-                nt.push(t);
+                newTiles.push(t);
               }
             }
           }
-          if (!hasAnyMove()) forceValidMove();
-          nt.forEach((t) =>
+
+          // 내려올 때 검사
+          if (newTiles.length > 0 && !hasAnyMove()) forceValidMove();
+
+          newTiles.forEach((t) => {
             k.tween(
               t.pos,
               k.vec2(
                 t.gridX * TILE_SIZE + offsetX,
                 t.gridY * TILE_SIZE + offsetY,
               ),
-              0.2,
+              0.3,
               (p) => (t.pos = p),
-            ),
-          );
-          k.wait(0.3, () => checkMatches());
+            );
+          });
+
+          k.wait(0.35, () => {
+            isLocked = false;
+            checkMatches(); // 연쇄 폭발 검사
+          });
         }
 
+        // --- 7. 보조 알고리즘 ---
         function hasAnyMove() {
-          /* 생략(이전 로직 유지) */ return true;
+          for (let x = 0; x < BOARD_SIZE; x++) {
+            for (let y = 0; y < BOARD_SIZE; y++) {
+              if (x < BOARD_SIZE - 1) {
+                if (testSwap(x, y, x + 1, y)) return true;
+              }
+              if (y < BOARD_SIZE - 1) {
+                if (testSwap(x, y, x, y + 1)) return true;
+              }
+            }
+          }
+          return false;
         }
+
+        function testSwap(x1, y1, x2, y2) {
+          if (!board[x1][y1] || !board[x2][y2]) return false;
+          let t1 = board[x1][y1].type,
+            t2 = board[x2][y2].type;
+          board[x1][y1].type = t2;
+          board[x2][y2].type = t1;
+          let match = checkSingle(x1, y1) || checkSingle(x2, y2);
+          board[x1][y1].type = t1;
+          board[x2][y2].type = t2;
+          return match;
+        }
+
+        function checkSingle(x, y) {
+          let type = board[x][y].type;
+          let h = 1,
+            v = 1;
+          for (
+            let i = x - 1;
+            i >= 0 && board[i][y] && board[i][y].type === type;
+            i--
+          )
+            h++;
+          for (
+            let i = x + 1;
+            i < BOARD_SIZE && board[i][y] && board[i][y].type === type;
+            i++
+          )
+            h++;
+          for (
+            let j = y - 1;
+            j >= 0 && board[x][j] && board[x][j].type === type;
+            j--
+          )
+            v++;
+          for (
+            let j = y + 1;
+            j < BOARD_SIZE && board[x][j] && board[x][j].type === type;
+            j++
+          )
+            v++;
+          return h >= 3 || v >= 3;
+        }
+
         function forceValidMove() {
-          /* 생략(이전 로직 유지) */
+          let rx = k.randi(0, BOARD_SIZE - 2),
+            ry = k.randi(0, BOARD_SIZE - 1),
+            type = k.choose(TYPES);
+          if (board[rx][ry]) {
+            board[rx][ry].type = type;
+            board[rx][ry].text = type;
+          }
+          if (board[rx + 1][ry]) {
+            board[rx + 1][ry].type = type;
+            board[rx + 1][ry].text = type;
+          }
+          if (board[rx + 2][ry + 1]) {
+            board[rx + 2][ry + 1].type = type;
+            board[rx + 2][ry + 1].text = type;
+          }
         }
+
         fillEmptySpaces();
       });
 

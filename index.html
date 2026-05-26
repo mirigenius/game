@@ -301,9 +301,9 @@
           if (!tileA || !tileB) return;
           isLocked = true;
 
-          // 시각적 이동
-          const posA = k.vec2(tileA.pos.x, tileA.pos.y);
-          const posB = k.vec2(tileB.pos.x, tileB.pos.y);
+          // 시각적 이동 (Grid 좌표 기반)
+          const posA = k.vec2(tileA.gridX * TILE_SIZE + offsetX, tileA.gridY * TILE_SIZE + offsetY);
+          const posB = k.vec2(tileB.gridX * TILE_SIZE + offsetX, tileB.gridY * TILE_SIZE + offsetY);
           k.tween(
             tileA.pos,
             posB,

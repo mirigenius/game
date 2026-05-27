@@ -215,7 +215,6 @@
 
         let board = [];
         let isLocked = false;
-        let isFalling = false;
         let score = 0;
         let timeLeft = 60;
         let gameEnded = false;
@@ -301,26 +300,6 @@
         function swapTiles(tileA, tileB, isReverting = false) {
           if (!tileA || !tileB) return;
 
-          // 떨어지는 도중에 사용자가 스와이프를 시도한 경우 (사용자 요청: 무조건 제자리로 돌아가게 처리)
-          // 논리적 배열은 바꾸지 않고 시각적으로만 교환했다가 되돌립니다.
-          if (isFalling && !isReverting) {
-            isLocked = true;
-            const tempPosA = k.vec2(tileA.pos.x, tileA.pos.y);
-            const tempPosB = k.vec2(tileB.pos.x, tileB.pos.y);
-            k.tween(tileA.pos, tempPosB, 0.2, (p) => (tileA.pos = p), k.easings.easeOutQuad);
-            k.tween(tileB.pos, tempPosA, 0.2, (p) => (tileB.pos = p), k.easings.easeOutQuad);
-
-            k.wait(0.25, () => {
-              // 원래 자리로 되돌림
-              k.tween(tileA.pos, tempPosA, 0.2, (p) => (tileA.pos = p), k.easings.easeOutQuad);
-              k.tween(tileB.pos, tempPosB, 0.2, (p) => (tileB.pos = p), k.easings.easeOutQuad);
-              k.wait(0.25, () => {
-                if (!isFalling) isLocked = false;
-              });
-            });
-            return;
-          }
-
           isLocked = true;
 
           // 시각적 이동 (Grid 좌표 기반)
@@ -362,7 +341,7 @@
               checkMatches({ tileA, tileB });
             } else {
               // 되돌리기 이동이 끝났으니 잠금 해제
-              if (!isFalling) isLocked = false;
+              isLocked = false;
             }
           });
         }
@@ -414,6 +393,7 @@
           }
 
           if (matched.size > 0) {
+            isLocked = true;
             timeLeft = 60; // 시간 충전
             score += matched.size * 10;
             scoreLabel.text = `Score: ${score}`;
@@ -427,7 +407,7 @@
             if (swapped) {
               swapTiles(swapped.tileA, swapped.tileB, true);
             } else {
-              isFalling = false;
+              // 매칭 검사 및 연쇄 폭발이 모두 종료됨 -> 잠금 해제
               isLocked = false;
               if (!hasAnyMove()) forceValidMove();
             }
@@ -436,7 +416,7 @@
 
         // --- 6. 중력 및 리필 (빈칸 버그 해결) ---
         function applyGravity() {
-          isFalling = true;
+          isLocked = true;
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = BOARD_SIZE - 1; y >= 0; y--) {
               if (board[x][y] === null) {
@@ -462,7 +442,7 @@
         }
 
         function fillEmptySpaces() {
-          isFalling = true;
+          isLocked = true;
           let newTiles = [];
           for (let x = 0; x < BOARD_SIZE; x++) {
             for (let y = 0; y < BOARD_SIZE; y++) {
@@ -498,7 +478,6 @@
           });
 
           k.wait(0.35, () => {
-            isFalling = false;
             checkMatches(); // 연쇄 폭발 검사
           });
         }
